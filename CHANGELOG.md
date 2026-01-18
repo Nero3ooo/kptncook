@@ -1,3 +1,132 @@
+Unreleased
+==========
+
+### Features
+- Export step ingredient references to Mealie for cooking mode linking.
+- Added `MEALIE_API_TOKEN` support as an alternative to username/password for Mealie sync.
+
+### Fixes
+- #61 Fix crash when `KPTNCOOK_HOME` is set by normalizing and expanding the configured root path
+  (thanks @alexdetsch).
+- #36 Handle recipes without cover images in Mealie sync (avoid crash).
+
+0.0.26 - 2025-12-25
+===================
+
+### Features
+- Added `discovery-screen` command to list discovery lists and quick search entries.
+- Added `discovery-list` command to fetch discovery list recipes (latest/recommended or curated/automated list IDs).
+- Added `dailies` command and API support to fetch full daily recipes with optional filters.
+- Added `onboarding` command to fetch tagged onboarding recipes.
+- Added `ingredients-popular` and `recipes-with-ingredients` commands with API support
+  for ingredient discovery and ingredient-based recipe searches.
+- Added an API helper to resolve recipe summary identifiers via `/recipes/search`.
+- #54 Added `delete-recipes` command to remove recipes from the local repository by
+  index or oid to avoid re-syncing unwanted items.
+- #50 Added a Tandoor exporter module and `export-recipes-to-tandoor` command for
+  recipe.zip generation (thanks @michael-arndt-gcx).
+- Added step-ingredient models and recipe type keywords for Tandoor exports.
+- #38 Added optional ingredient grouping by `ingredient.typ` across exporters with
+  configurable labels (thanks @ValleBL).
+- #41 Exported KptnCook active tags to Mealie and Tandoor, deduping the base
+  kptncook tag while preserving recipe type keywords (thanks @Kadz93).
+
+### Fixes
+- Fixed discovery list fetching to use the correct API paths and show quick-search
+  entries and ingredient names in the CLI output.
+- Allow comma-separated onboarding tags in the CLI and de-duplicate inputs.
+- #36 Handle Mealie 422 validation errors without masking the response (thanks @dvogt23).
+- #60 Extend localized field fallbacks to handle singular/plural title payloads and
+  fill missing ingredient titles more robustly.
+- #55 Follow redirects when fetching KptnCook images for Mealie sync and avoid JSON parsing
+  on non-JSON error responses.
+- #818 Apply locale fallback (de -> en -> any) for exporter localized strings instead of
+  hard-coding German.
+- Use locale fallback when listing or deleting recipes in the CLI.
+- Replaced raw debug prints with logging for cleaner CLI output during exports/sync.
+
+### Infrastructure
+- Added a justfile with common dev commands and beadsflow helpers.
+- Added beadsflow configuration for local Beads automation.
+- Added AGENTS.md for repo-specific workflow guidance.
+- Added Ruff to dev dependencies to support `just lint`.
+- Excluded notebooks from Ruff formatting and linting.
+- Updated clean targets to skip `.venv/`, `.beads/`, and `.git/`.
+- Added a GitHub-to-Beads importer script and just helper with dry-run support.
+- Added a basic Dockerfile and .dockerignore for container builds.
+
+### Documentation
+- Added quick README examples for automated discovery lists and multi-tag onboarding saves.
+- Clarified required `--tag` and `--ingredient-id` flags for onboarding and
+  ingredient-based commands in the README usage section.
+- Added quick usage snippets for discovery, dailies, onboarding, and ingredient
+  commands in the README.
+- Added curated and recommended discovery list examples to the README quick usage snippets.
+- Documented discovery, dailies, onboarding, and ingredient-based commands with
+  examples (including recipeFilter/zone) and required flags in the README.
+- Documented discovery list short flags and onboarding tag slug examples in the
+  README usage section.
+- Added a discovery-screen -> discovery-list workflow example and clarified save
+  options for dailies, discovery lists, and ingredient-based commands in the
+  README usage section.
+- Expanded README discovery and ingredient usage examples for automated lists
+  and repeatable ingredient ids.
+- Clarified discovery list output format and recipe summary resolution in the
+  README usage section.
+- Clarified required discovery list flags and popular ingredient output format
+  in the README usage section.
+- Updated the README intro and ingredient guidance for discovery, dailies,
+  onboarding, and ingredient-based commands, and corrected the access-token
+  helper name.
+- Clarified README guidance on access-token requirements for ingredient-based
+  commands and onboarding recipe resolution.
+- Clarified discovery list type requirements and list-id usage in the README
+  usage section.
+- Documented Beads onboarding and `.beads/` commit policy.
+- Documented required quality gates and beadsflow usage.
+- Updated pre-commit install instructions to use `uv run`.
+- Documented the GitHub issue import helper.
+- Documented the `export-recipes-to-tandoor` command in the README.
+- Added Docker usage instructions to the README.
+
+0.0.25 - 2025-06-28
+===================
+
+### Fixes
+- #57 Fixed the url for fetching the access token
+
+### Documentation
+- Clarified `.env` file setup instructions to prevent users from editing the executable
+  - Added explicit directory and file creation steps
+  - Added warning about correct file location
+  - Added troubleshooting section for common configuration errors
+
+0.0.24 - 2025-06-12
+===================
+
+### Features
+- Added password manager integration for KptnCook authentication
+  - Support for retrieving credentials via shell commands (1Password, pass, Bitwarden, etc.)
+  - New environment variables: KPTNCOOK_USERNAME_COMMAND and KPTNCOOK_PASSWORD_COMMAND
+  - Automatic fallback to interactive prompts if password manager commands fail
+
+0.0.23 - 2025-06-12
+===================
+
+### Infrastructure
+- Migrated build system from flit to uv
+- Moved package to src layout (kptncook/ → src/kptncook/)
+- Replaced Black, isort, and flake8 with Ruff for linting and formatting
+- Updated all documentation to use uv commands instead of flit/pipx
+- Changed from project.optional-dependencies to dependency-groups for dev dependencies
+
+0.0.22 - 2025-02-21
+===================
+
+- #48 uid can also have a length of 7 @Nero3ooo
+- Some minor fixes for pre-commit hooks / mypy etc @ephes
+- #47 fix nutrition format @david-askari
+
 0.0.21 - 2024-09-16
 ===================
 

@@ -11,31 +11,36 @@ import base64
 import glob
 import gzip
 import json
+import logging
 import os
 import re
 import secrets
-import shutil
 import tempfile
-import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 from jinja2 import Template
-from unidecode import unidecode
 
 from kptncook.config import settings
-from kptncook.models import Image, Recipe
+from kptncook.exporter_utils import (
+    asciify_string,
+    get_cover,
+    move_to_target_dir,
+    write_zip,
+)
+from kptncook.ingredient_groups import iter_ingredient_groups
+from kptncook.models import Image, Ingredient, Recipe, localized_fallback
 
 PAPRIKA_RECIPE_TEMPLATE = """{
    "uid":"{{recipe.id.oid}}",
-   "name":"{{recipe.localized_title.de}}",
-   "directions": "{% for step in recipe.steps %}{{step.title.de}}\\n{% endfor %}",
+   "name":"{{localized_fallback(recipe.localized_title)|default('',true)}}",
+   "directions": "{% for step in recipe.steps %}{{localized_fallback(step.title)|default('',true)}}\\n{% endfor %}",
    "servings":"2",
    "rating":0,
    "difficulty":"",
-   "ingredients":"{% for ingredient in recipe.ingredients %}{% if ingredient.quantity %}{{'{0:g}'.format(ingredient.quantity) }}{% endif %} {{ingredient.measure|default('',true)}} {{ingredient.ingredient.uncountable_title.de|default('',true)}}\\n{% endfor %}",
+   "ingredients":"{{ingredients_text}}",
    "notes":"",
    "created":"{{dtnow}}",
    "image_url":null,
@@ -53,6 +58,8 @@ PAPRIKA_RECIPE_TEMPLATE = """{
    "categories":["Kptncook"]
 }
 """  # noqa: E501
+
+logger = logging.getLogger(__name__)
 
 
 class GeneratedData:
@@ -77,7 +84,7 @@ class PaprikaExporter:
         filename_full_path = self.save_recipes(
             export_data=export_data, directory=tmp_dir, filename=filename
         )
-        self.move_to_target_dir(
+        move_to_target_dir(
             source=filename_full_path, target=os.path.join(str(Path.cwd()), filename)
         )
         return filename
@@ -87,7 +94,10 @@ class PaprikaExporter:
     ) -> str:
         if len(export_data) == 1:
             return (
-                self.asciify_string(s=recipes[0].localized_title.de) + ".paprikarecipes"
+                asciify_string(
+                    s=localized_fallback(recipes[0].localized_title) or "recipe"
+                )
+                + ".paprikarecipes"
             )
         else:
             return "allrecipes.paprikarecipes"
@@ -101,17 +111,46 @@ class PaprikaExporter:
 
     def get_recipe_as_json_string(self, recipe: Recipe) -> str:
         generated = self.get_generated_data(recipe=recipe)
+        ingredients_text = self.get_ingredients_text(recipe.ingredients)
         recipe_as_json = self.template.render(
             recipe=recipe,
+            localized_fallback=localized_fallback,
             dtnow=generated.dtnow,
             cover_filename=generated.cover_filename,
             hash=generated.hash,
             cover_img=generated.cover_img,
+            ingredients_text=ingredients_text,
         )
         recipe_as_json = self.invalid_control_chars.sub("", recipe_as_json)
         recipe_as_json = self.unescaped_newline.sub(" ", recipe_as_json)
         json.loads(recipe_as_json)  # check if valid json
         return recipe_as_json
+
+    def get_ingredients_text(self, ingredients: list[Ingredient]) -> str:
+        lines = []
+        for group_label, group_ingredients in iter_ingredient_groups(ingredients):
+            if group_label:
+                lines.append(f"{group_label}:")
+            for ingredient in group_ingredients:
+                line = self.format_ingredient_line(ingredient)
+                if line:
+                    lines.append(line)
+        if not lines:
+            return ""
+        return "\\n".join(lines) + "\\n"
+
+    def format_ingredient_line(self, ingredient: Ingredient) -> str:
+        parts: list[str] = []
+        if ingredient.quantity:
+            parts.append("{0:g}".format(ingredient.quantity))
+        if ingredient.measure:
+            parts.append(ingredient.measure)
+        ingredient_name = (
+            localized_fallback(ingredient.ingredient.uncountable_title) or ""
+        )
+        if ingredient_name:
+            parts.append(ingredient_name)
+        return " ".join(part for part in parts if part).strip()
 
     def get_export_data(self, recipes: list[Recipe]) -> dict[str, str]:
         export_data = dict()
@@ -120,17 +159,8 @@ class PaprikaExporter:
                 recipe_as_json = self.get_recipe_as_json_string(recipe=recipe)
                 export_data[str(recipe.id.oid)] = recipe_as_json
             except json.JSONDecodeError as e:
-                print(f"Could not parse recipe {recipe.id.oid}: {e}")
+                logger.warning("Could not parse recipe %s: %s", recipe.id.oid, e)
         return export_data
-
-    def move_to_target_dir(self, source: str, target: str) -> str:
-        return shutil.move(source, target)
-
-    def asciify_string(self, s) -> str:
-        s = unidecode(s)
-        s = re.sub(r"[^\w\s]", "_", s)
-        s = re.sub(r"\s+", "_", s)
-        return s
 
     def save_recipes(
         self, export_data: dict[str, Any], filename: str, directory: str
@@ -140,19 +170,16 @@ class PaprikaExporter:
             with gzip.open(recipe_as_gz, "wb") as f:
                 f.write(recipe_as_json.encode("utf-8"))
         filename_full_path = os.path.join(directory, filename)
-        with zipfile.ZipFile(
-            filename_full_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
-        ) as zip_file:
-            gz_files = glob.glob(os.path.join(directory, "*.paprikarecipe"))
-            print(gz_files)
-            for gz_file in gz_files:
-                zip_file.write(gz_file, arcname=os.path.basename(gz_file))
+        gz_files = glob.glob(os.path.join(directory, "*.paprikarecipe"))
+        logger.debug("Paprika export files: %s", gz_files)
+        entries = [(Path(gz_file).name, Path(gz_file)) for gz_file in gz_files]
+        write_zip(Path(filename_full_path), entries)
         return filename_full_path
 
     def get_cover_img_as_base64_string(
         self, recipe: Recipe
     ) -> tuple[str | None, str | None]:
-        cover = self.get_cover(image_list=recipe.image_list)
+        cover = get_cover(image_list=recipe.image_list)
         if cover is None:
             raise ValueError("No cover image found")
         cover_url = recipe.get_image_url(api_key=settings.kptncook_api_key)
@@ -163,21 +190,21 @@ class PaprikaExporter:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                print(
-                    f'Cover image for "{recipe.localized_title.de}" not found online any more.'
-                )
+                title = localized_fallback(recipe.localized_title) or "kptncook-recipe"
+                logger.warning('Cover image for "%s" not found online any more.', title)
             else:
-                print(
-                    f"While trying to fetch the cover img a HTTP error occurred: {exc.response.status_code}: {exc}"
+                logger.error(
+                    "HTTP error while fetching cover image (%s): %s",
+                    exc.response.status_code,
+                    exc,
                 )
             return None, None
         return cover.name, base64.b64encode(response.content).decode("utf-8")
 
-    def get_cover(self, image_list: list[Image]) -> Image | None:
+    def asciify_string(self, s: str) -> str:
+        return asciify_string(s)
+
+    def get_cover(self, image_list: list[Image] | None) -> Image | None:
         if not isinstance(image_list, list):
             raise ValueError("Parameter image_list must be a list")
-        try:
-            [cover] = [i for i in image_list if i.type == "cover"]
-        except ValueError:
-            return None
-        return cover
+        return get_cover(image_list)

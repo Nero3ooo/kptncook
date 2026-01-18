@@ -1,6 +1,8 @@
 """
 Base settings for kptncook.
 """
+
+import os
 import sys
 from pathlib import Path
 
@@ -13,16 +15,29 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(Path.home() / ".kptncook" / ".env"), extra="ignore"
     )
-    root: DirectoryPath = Field(Path.home() / ".kptncook", env="KPTNCOOK_HOME")
+    root: DirectoryPath = Field(
+        Path.home() / ".kptncook", validation_alias="KPTNCOOK_HOME"
+    )  # type: ignore
     kptncook_api_key: str
     kptncook_access_token: str | None = None
     kptncook_api_url: AnyHttpUrl = AnyHttpUrl("https://mobile.kptncook.com")
+    kptncook_lang: str = "de"
+    kptncook_store: str = "de"
+    kptncook_preferences: str | None = None
     mealie_url: AnyHttpUrl = AnyHttpUrl("http://localhost:9000/api")
-    mealie_username: str
-    mealie_password: str
+    mealie_username: str | None = None
+    mealie_password: str | None = None
+    mealie_api_token: str | None = None
+
+    # Password manager integration
+    kptncook_username_command: str | None = None
+    kptncook_password_command: str | None = None
+    kptncook_group_ingredients_by_typ: bool = False
+    kptncook_ingredient_group_labels: str | None = None
 
     @field_validator("root", mode="before")
-    def root_must_exist(cls, path: Path) -> Path:
+    def root_must_exist(cls, path: str | Path | os.PathLike[str]) -> Path:
+        path = Path(os.path.expandvars(os.fspath(path))).expanduser()
         path.mkdir(parents=True, exist_ok=True)
         return path
 
